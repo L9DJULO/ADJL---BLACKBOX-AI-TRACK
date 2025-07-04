@@ -1,36 +1,26 @@
 import httpx
-from typing import Any
 from ..config import get_settings
 
-GROKCLOUD_ENDPOINT = "https://api.grokcloud.io/v1/chat/completions"  # à adapter selon doc officielle
+GROKCLOUD_ENDPOINT  = "https://api.groq.com/openai/v1/chat/completions"
 
-async def query_grokcloud(
-    prompt: str,
-    *,
-    model: str = "grokcloud-70b-chat",
-    temperature: float = 0.7,
-    max_tokens: int | None = None,
-    **extra: Any,
-) -> str:
+async def query_groqcloud(prompt: str) -> str:
     settings = get_settings()
 
     headers = {
-        "Authorization": f"Bearer {settings.GROKCLOUD_API_KEY}",
-        "Content-Type": "application/json",
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+        "Content-Type": "application/json"
     }
 
     payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
-        **extra,
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
     }
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.post(GROKCLOUD_ENDPOINT, json=payload, headers=headers)
-        resp.raise_for_status()
+    async with httpx.AsyncClient() as client:
+        response = await client.post(GROKCLOUD_ENDPOINT, json=payload, headers=headers)
+        response.raise_for_status()
 
-    data = resp.json()
+    data = response.json()
     return data["choices"][0]["message"]["content"]
