@@ -28,3 +28,5 @@ def root():
 
 # Inclusion des routes dans /api
 app.include_router(api_router, prefix="/api")
+
+

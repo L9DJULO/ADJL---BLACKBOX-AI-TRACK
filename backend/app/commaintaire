@@ -1,1 +1,1 @@
-fait faire uvicorn app.main:app --reload
+fait faire pour lancer uvicorn app.main:app --reload
