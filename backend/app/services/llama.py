@@ -2,12 +2,12 @@ import httpx
 from typing import Any
 from ..config import get_settings
 
-GROKCLOUD_ENDPOINT = "https://api.grokcloud.io/v1/chat/completions"  # à adapter selon doc officielle
+LLAMA_ENDPOINT = "https://api.llama.ai/v1/chat/completions"  # à adapter selon doc officielle
 
-async def query_grokcloud(
+async def generate_llama(
     prompt: str,
     *,
-    model: str = "grokcloud-70b-chat",
+    model: str = "llama-3-70b-chat",
     temperature: float = 0.7,
     max_tokens: int | None = None,
     **extra: Any,
@@ -15,7 +15,7 @@ async def query_grokcloud(
     settings = get_settings()
 
     headers = {
-        "Authorization": f"Bearer {settings.GROKCLOUD_API_KEY}",
+        "Authorization": f"Bearer {settings.LLAMA_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -28,9 +28,9 @@ async def query_grokcloud(
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.post(GROKCLOUD_ENDPOINT, json=payload, headers=headers)
-        resp.raise_for_status()
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(LLAMA_ENDPOINT, json=payload, headers=headers)
+        response.raise_for_status()
 
-    data = resp.json()
+    data = response.json()
     return data["choices"][0]["message"]["content"]
