@@ -63,8 +63,69 @@ class BlackboxService:
             logger.error(f"Error analyzing code: {e}")
             return self._fallback_analysis(code, language)
     
-    def generate_code(self, prompt: str, language: str = "python") -> Dict[str, Any]:
-        """Generate code using BLACKBOX.AI"""
+    # FIX: Nouvelle méthode pour correspondre à l'usage dans ai_orchestrator
+    async def generate_code(self, command: str, context: str, analysis: Dict[str, Any] = None, external_data: Dict[str, Any] = None, language: str = "python") -> Dict[str, Any]:
+        """Generate code using BLACKBOX.AI with enhanced context"""
+        try:
+            # Construire le prompt enrichi
+            enhanced_prompt = self._build_enhanced_prompt(command, context, analysis, external_data)
+            
+            payload = {
+                "prompt": enhanced_prompt,
+                "language": language,
+                "max_tokens": 1000,
+                "temperature": 0.7
+            }
+            
+            response = requests.post(
+                f"{self.blackbox_url}/code/generate",
+                headers=self.headers,
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return {
+                    "success": True,
+                    "code": result.get("code", ""),
+                    "explanation": result.get("explanation", ""),
+                    "source": "blackbox_ai"
+                }
+            else:
+                return await self._fallback_generation(enhanced_prompt, language)
+                
+        except Exception as e:
+            logger.error(f"Error generating code: {e}")
+            return await self._fallback_generation(command, language)
+    
+    def _build_enhanced_prompt(self, command: str, context: str, analysis: Dict[str, Any] = None, external_data: Dict[str, Any] = None) -> str:
+        """Build enhanced prompt with all available context"""
+        prompt_parts = [f"Commande: {command}"]
+        
+        if context:
+            prompt_parts.append(f"Contexte du code existant:\n{context}")
+        
+        if analysis and analysis.get("success"):
+            intent = analysis.get("content", "")
+            prompt_parts.append(f"Analyse de l'intention:\n{intent}")
+        
+        if external_data:
+            # Ajouter les données externes pertinentes
+            if external_data.get("documentation", {}).get("success"):
+                doc_content = external_data["documentation"].get("content", "")[:500]
+                prompt_parts.append(f"Documentation pertinente:\n{doc_content}")
+            
+            if external_data.get("examples", {}).get("success"):
+                examples = external_data["examples"].get("examples", [])
+                if examples:
+                    example_content = examples[0].get("content", "")[:300]
+                    prompt_parts.append(f"Exemple de code similaire:\n{example_content}")
+        
+        return "\n\n".join(prompt_parts)
+    
+    def generate_code_basic(self, prompt: str, language: str = "python") -> Dict[str, Any]:
+        """Generate code using BLACKBOX.AI - basic version"""
         try:
             payload = {
                 "prompt": prompt,
@@ -204,10 +265,10 @@ class BlackboxService:
             logger.error(f"Fallback analysis error: {e}")
             return {"error": "Analysis failed", "success": False}
     
-    def _fallback_generation(self, prompt: str, language: str) -> Dict[str, Any]:
+    async def _fallback_generation(self, prompt: str, language: str) -> Dict[str, Any]:
         """Fallback code generation using Groq + Llama"""
         if not self.groq_client:
-            return {"error": "No generation service available"}
+            return {"error": "No generation service available", "success": False}
         
         try:
             full_prompt = f"""

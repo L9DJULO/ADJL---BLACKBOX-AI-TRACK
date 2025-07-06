@@ -1,361 +1,431 @@
-import aiohttp
-import asyncio
-from typing import Dict, Any, List, Optional
-import json
 import os
-from urllib.parse import urljoin, urlparse
+import json
+import asyncio
+import aiohttp
+import logging
+from typing import Dict, List, Optional, Any
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 class FetchService:
-    """Service pour récupérer des données externes (APIs, documentation, exemples de code)"""
+    """Service for integrating with Fetch.ai network"""
     
     def __init__(self):
+        self.fetch_api_key = os.getenv('FETCH_API_KEY')
+        self.fetch_network_url = os.getenv('FETCH_NETWORK_URL', 'https://api.fetch.ai/v1')
+        self.agent_registry = {}
         self.session = None
-        self.headers = {
-            'User-Agent': 'AI-Voice-Code-Assistant/1.0',
-            'Accept': 'application/json, text/plain, */*'
-        }
+        
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create aiohttp session"""
+        if not self.session:
+            self.session = aiohttp.ClientSession(
+                headers={
+                    'Authorization': f'Bearer {self.fetch_api_key}',
+                    'Content-Type': 'application/json'
+                }
+            )
+        return self.session
     
-    async def __aenter__(self):
-        self.session = aiohttp.ClientSession(headers=self.headers)
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
-    
-    async def fetch_api_documentation(self, api_name: str, endpoint: str = None) -> Dict[str, Any]:
-        """Récupère la documentation d'une API"""
-        
-        api_docs = {
-            "github": "https://docs.github.com/en/rest",
-            "openai": "https://platform.openai.com/docs/api-reference",
-            "fastapi": "https://fastapi.tiangolo.com/",
-            "react": "https://react.dev/reference/react",
-            "python": "https://docs.python.org/3/library/",
-        }
-        
-        if api_name.lower() not in api_docs:
-            return {"error": f"Documentation pour {api_name} non disponible"}
-        
-        url = api_docs[api_name.lower()]
-        if endpoint:
-            url = urljoin(url, endpoint)
-        
+    async def deploy_agent(self, code: str, name: str, description: str = None) -> Dict[str, Any]:
+        """Deploy a new Fetch.ai agent"""
         try:
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    content = await response.text()
-                    return {
-                        "success": True,
-                        "url": url,
-                        "content": content[:5000],  # Limiter pour éviter overflow
-                        "status": response.status
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "error": f"HTTP {response.status}",
-                        "url": url
-                    }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "url": url
+            session = await self._get_session()
+            
+            payload = {
+                "name": name,
+                "code": code,
+                "description": description or f"AI Code Assistant Agent: {name}",
+                "skills": ["code_analysis", "code_generation", "collaboration"],
+                "resources": {
+                    "memory": "512MB",
+                    "cpu": "0.5"
+                }
             }
-    
-    async def fetch_code_examples(self, language: str, topic: str) -> Dict[str, Any]:
-        """Récupère des exemples de code depuis GitHub ou autres sources"""
-        
-        # GitHub API pour chercher des exemples
-        search_url = f"https://api.github.com/search/code"
-        params = {
-            "q": f"{topic} language:{language}",
-            "sort": "indexed",
-            "per_page": 5
-        }
-        
-        try:
-            async with self.session.get(search_url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    examples = []
+            
+            async with session.post(
+                f"{self.fetch_network_url}/agents/deploy",
+                json=payload
+            ) as response:
+                
+                if response.status == 201:
+                    result = await response.json()
+                    agent_id = result.get('agent_id')
                     
-                    for item in data.get("items", [])[:3]:  # Limiter à 3 exemples
-                        # Récupérer le contenu du fichier
-                        file_content = await self.fetch_file_content(item["url"])
-                        examples.append({
-                            "name": item["name"],
-                            "repository": item["repository"]["full_name"],
-                            "url": item["html_url"],
-                            "content": file_content.get("content", "")[:1000]  # Limiter
-                        })
+                    # Store in local registry
+                    self.agent_registry[agent_id] = {
+                        "name": name,
+                        "deployed_at": datetime.now().isoformat(),
+                        "status": "active"
+                    }
                     
                     return {
-                        "success": True,
-                        "examples": examples,
-                        "total_count": data.get("total_count", 0)
+                        "agent_id": agent_id,
+                        "status": "deployed",
+                        "endpoint": result.get('endpoint'),
+                        "message": f"Agent {name} deployed successfully"
                     }
                 else:
-                    return {
-                        "success": False,
-                        "error": f"GitHub API error: {response.status}"
-                    }
+                    return await self._handle_error(response)
+                    
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            logger.error(f"Error deploying agent: {e}")
+            return {"error": str(e), "success": False}
     
-    async def fetch_file_content(self, api_url: str) -> Dict[str, Any]:
-        """Récupère le contenu d'un fichier depuis l'API GitHub"""
+    async def get_agent_status(self, agent_id: str) -> Dict[str, Any]:
+        """Get status of a deployed agent"""
         try:
-            async with self.session.get(api_url) as response:
+            session = await self._get_session()
+            
+            async with session.get(
+                f"{self.fetch_network_url}/agents/{agent_id}/status"
+            ) as response:
+                
                 if response.status == 200:
-                    data = await response.json()
-                    # Décoder le contenu base64
-                    import base64
-                    content = base64.b64decode(data["content"]).decode("utf-8")
+                    result = await response.json()
+                    
+                    # Update local registry
+                    if agent_id in self.agent_registry:
+                        self.agent_registry[agent_id]["last_check"] = datetime.now().isoformat()
+                        self.agent_registry[agent_id]["status"] = result.get("status", "unknown")
+                    
+                    return result
+                else:
+                    return await self._handle_error(response)
+                    
+        except Exception as e:
+            logger.error(f"Error getting agent status: {e}")
+            return {"error": str(e), "success": False}
+    
+    async def communicate_with_agent(self, agent_id: str, message: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Send message to a Fetch.ai agent"""
+        try:
+            session = await self._get_session()
+            
+            payload = {
+                "message": message,
+                "context": context,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            async with session.post(
+                f"{self.fetch_network_url}/agents/{agent_id}/communicate",
+                json=payload
+            ) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
                     return {
-                        "success": True,
-                        "content": content,
-                        "size": data["size"]
+                        "response": result.get("response"),
+                        "agent_id": agent_id,
+                        "timestamp": result.get("timestamp"),
+                        "success": True
                     }
                 else:
-                    return {"success": False, "error": f"HTTP {response.status}"}
+                    return await self._handle_error(response)
+                    
+        except Exception as e:
+            logger.error(f"Error communicating with agent: {e}")
+            return {"error": str(e), "success": False}
+    
+    async def search_network_resources(self, query: str, resource_type: str, max_results: int = 10) -> Dict[str, Any]:
+        """Search Fetch.ai network for resources"""
+        try:
+            session = await self._get_session()
+            
+            params = {
+                "q": query,
+                "type": resource_type,
+                "limit": max_results
+            }
+            
+            async with session.get(
+                f"{self.fetch_network_url}/search",
+                params=params
+            ) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        "resources": result.get("results", []),
+                        "total": result.get("total", 0),
+                        "query": query,
+                        "type": resource_type,
+                        "success": True
+                    }
+                else:
+                    return await self._handle_error(response)
+                    
+        except Exception as e:
+            logger.error(f"Error searching network: {e}")
+            return {"error": str(e), "success": False}
+    
+    async def fetch_data_for_command(self, command: str, context: str, sources: List[str] = None) -> Dict[str, Any]:
+        """Fetch external data to enhance command processing"""
+        sources = sources or ["documentation", "examples", "packages", "solutions"]
+        results = {}
+        
+        # Execute searches concurrently
+        tasks = []
+        for source in sources:
+            if source == "documentation":
+                tasks.append(self._fetch_documentation(command, context))
+            elif source == "examples":
+                tasks.append(self._fetch_code_examples(command, context))
+            elif source == "packages":
+                tasks.append(self._fetch_package_info(command, context))
+            elif source == "solutions":
+                tasks.append(self._fetch_solutions(command, context))
+        
+        # Wait for all tasks to complete
+        try:
+            task_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for i, result in enumerate(task_results):
+                source = sources[i] if i < len(sources) else f"source_{i}"
+                if isinstance(result, Exception):
+                    results[source] = {"error": str(result), "success": False}
+                else:
+                    results[source] = result
+                    
+        except Exception as e:
+            logger.error(f"Error fetching data: {e}")
+            results["error"] = str(e)
+        
+        return results
+    
+    async def _fetch_documentation(self, command: str, context: str) -> Dict[str, Any]:
+        """Fetch relevant documentation"""
+        try:
+            session = await self._get_session()
+            
+            # Extract potential library/framework names from command and context
+            search_terms = self._extract_search_terms(command, context)
+            
+            async with session.get(
+                f"{self.fetch_network_url}/docs/search",
+                params={"q": " ".join(search_terms), "limit": 5}
+            ) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        "success": True,
+                        "docs": result.get("docs", []),
+                        "content": result.get("content", ""),
+                        "sources": result.get("sources", [])
+                    }
+                else:
+                    return {"success": False, "error": "Documentation not found"}
+                    
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    async def fetch_npm_package_info(self, package_name: str) -> Dict[str, Any]:
-        """Récupère les informations d'un package NPM"""
-        url = f"https://registry.npmjs.org/{package_name}"
-        
+    async def _fetch_code_examples(self, command: str, context: str) -> Dict[str, Any]:
+        """Fetch code examples"""
         try:
-            async with self.session.get(url) as response:
+            session = await self._get_session()
+            
+            search_terms = self._extract_search_terms(command, context)
+            
+            async with session.get(
+                f"{self.fetch_network_url}/examples/search",
+                params={"q": " ".join(search_terms), "limit": 3}
+            ) as response:
+                
                 if response.status == 200:
-                    data = await response.json()
+                    result = await response.json()
                     return {
                         "success": True,
-                        "name": data.get("name"),
-                        "version": data.get("dist-tags", {}).get("latest"),
-                        "description": data.get("description"),
-                        "homepage": data.get("homepage"),
-                        "repository": data.get("repository", {}).get("url"),
-                        "dependencies": list(data.get("versions", {}).get(
-                            data.get("dist-tags", {}).get("latest", ""), {}
-                        ).get("dependencies", {}).keys())[:10]
+                        "examples": result.get("examples", []),
+                        "total": result.get("total", 0)
                     }
                 else:
-                    return {
-                        "success": False,
-                        "error": f"Package {package_name} non trouvé"
-                    }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    async def fetch_python_package_info(self, package_name: str) -> Dict[str, Any]:
-        """Récupère les informations d'un package Python depuis PyPI"""
-        url = f"https://pypi.org/pypi/{package_name}/json"
-        
-        try:
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    info = data.get("info", {})
-                    return {
-                        "success": True,
-                        "name": info.get("name"),
-                        "version": info.get("version"),
-                        "description": info.get("summary"),
-                        "homepage": info.get("home_page"),
-                        "docs_url": info.get("docs_url"),
-                        "requires_python": info.get("requires_python"),
-                        "keywords": info.get("keywords", "").split(",")[:5]
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "error": f"Package {package_name} non trouvé"
-                    }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    async def fetch_stackoverflow_solutions(self, query: str) -> Dict[str, Any]:
-        """Récupère des solutions depuis StackOverflow API"""
-        url = "https://api.stackexchange.com/2.3/search/advanced"
-        params = {
-            "order": "desc",
-            "sort": "votes",
-            "q": query,
-            "site": "stackoverflow",
-            "pagesize": 3,
-            "filter": "withbody"
-        }
-        
-        try:
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    solutions = []
+                    return {"success": False, "error": "Examples not found"}
                     
-                    for item in data.get("items", []):
-                        solutions.append({
-                            "title": item.get("title"),
-                            "score": item.get("score"),
-                            "answer_count": item.get("answer_count"),
-                            "url": item.get("link"),
-                            "tags": item.get("tags", []),
-                            "body": item.get("body", "")[:500]  # Limiter
-                        })
-                    
-                    return {
-                        "success": True,
-                        "solutions": solutions,
-                        "total": data.get("total", 0)
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "error": f"StackOverflow API error: {response.status}"
-                    }
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
     
-    async def fetch_best_practices(self, language: str, topic: str) -> Dict[str, Any]:
-        """Récupère les meilleures pratiques pour un langage/sujet"""
-        
-        # Sources de meilleures pratiques
-        sources = {
-            "python": [
-                "https://pep8.org/",
-                "https://docs.python-guide.org/",
-            ],
-            "javascript": [
-                "https://javascript.info/",
-                "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide",
-            ],
-            "typescript": [
-                "https://www.typescriptlang.org/docs/",
-            ]
-        }
-        
-        language_sources = sources.get(language.lower(), [])
-        if not language_sources:
-            return {
-                "success": False,
-                "error": f"Meilleures pratiques pour {language} non disponibles"
-            }
-        
-        # Récupérer depuis la première source
-        url = language_sources[0]
+    async def _fetch_package_info(self, command: str, context: str) -> Dict[str, Any]:
+        """Fetch package information"""
         try:
-            async with self.session.get(url) as response:
+            session = await self._get_session()
+            
+            # Extract package names from command
+            potential_packages = self._extract_package_names(command, context)
+            
+            if not potential_packages:
+                return {"success": False, "error": "No packages identified"}
+            
+            package_info = {}
+            for package in potential_packages[:3]:  # Limit to 3 packages
+                async with session.get(
+                    f"{self.fetch_network_url}/packages/{package}"
+                ) as response:
+                    
+                    if response.status == 200:
+                        result = await response.json()
+                        package_info[package] = result
+            
+            return {
+                "success": True,
+                "packages": package_info,
+                "count": len(package_info)
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _fetch_solutions(self, command: str, context: str) -> Dict[str, Any]:
+        """Fetch solutions from community"""
+        try:
+            session = await self._get_session()
+            
+            search_query = f"{command} {context}"[:100]  # Limit query length
+            
+            async with session.get(
+                f"{self.fetch_network_url}/solutions/search",
+                params={"q": search_query, "limit": 5}
+            ) as response:
+                
                 if response.status == 200:
-                    content = await response.text()
+                    result = await response.json()
                     return {
                         "success": True,
-                        "language": language,
-                        "topic": topic,
-                        "source": url,
-                        "content": content[:3000]  # Limiter
+                        "solutions": result.get("solutions", []),
+                        "total": result.get("total", 0)
                     }
                 else:
-                    return {
-                        "success": False,
-                        "error": f"HTTP {response.status}",
-                        "url": url
-                    }
+                    return {"success": False, "error": "Solutions not found"}
+                    
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-
-# Fonction utilitaire pour utiliser le service
-async def fetch_data_for_command(command: str, context: str) -> Dict[str, Any]:
-    """Fonction principale pour récupérer des données selon la commande"""
+            return {"success": False, "error": str(e)}
     
-    async with FetchService() as fetch_service:
-        results = {}
+    def _extract_search_terms(self, command: str, context: str) -> List[str]:
+        """Extract relevant search terms from command and context"""
+        import re
         
-        # Analyser la commande pour déterminer quoi récupérer
-        command_lower = command.lower()
+        # Common programming terms and patterns
+        programming_terms = re.findall(r'\b(?:import|from|class|def|function|method|api|library|framework|package)\s+(\w+)', 
+                                     command.lower() + " " + context.lower())
         
-        if "documentation" in command_lower or "docs" in command_lower:
-            # Extraire le nom de l'API/librairie
-            for api in ["github", "openai", "fastapi", "react", "python"]:
-                if api in command_lower:
-                    results["documentation"] = await fetch_service.fetch_api_documentation(api)
-                    break
+        # Extract quoted terms
+        quoted_terms = re.findall(r'["\']([^"\']+)["\']', command + " " + context)
         
-        if "example" in command_lower or "exemple" in command_lower:
-            # Détecter le langage depuis le contexte
-            language = detect_language_from_context(context)
-            topic = extract_topic_from_command(command)
-            results["examples"] = await fetch_service.fetch_code_examples(language, topic)
+        # Extract capitalized words (likely library names)
+        capitalized_words = re.findall(r'\b[A-Z][a-z]+\b', command + " " + context)
         
-        if "package" in command_lower or "library" in command_lower:
-            package_name = extract_package_name(command)
-            if package_name:
-                language = detect_language_from_context(context)
-                if language == "python":
-                    results["package_info"] = await fetch_service.fetch_python_package_info(package_name)
-                elif language in ["javascript", "typescript"]:
-                    results["package_info"] = await fetch_service.fetch_npm_package_info(package_name)
+        # Combine all terms
+        all_terms = programming_terms + quoted_terms + capitalized_words
         
-        if "stackoverflow" in command_lower or "solution" in command_lower:
-            query = extract_search_query(command)
-            results["solutions"] = await fetch_service.fetch_stackoverflow_solutions(query)
+        # Remove duplicates and return
+        return list(set(term.lower() for term in all_terms if len(term) > 2))
+    
+    def _extract_package_names(self, command: str, context: str) -> List[str]:
+        """Extract potential package names"""
+        import re
         
-        if "best practice" in command_lower or "bonne pratique" in command_lower:
-            language = detect_language_from_context(context)
-            topic = extract_topic_from_command(command)
-            results["best_practices"] = await fetch_service.fetch_best_practices(language, topic)
+        # Common package patterns
+        patterns = [
+            r'\bimport\s+([a-zA-Z_][a-zA-Z0-9_]*)',
+            r'\bfrom\s+([a-zA-Z_][a-zA-Z0-9_]*)',
+            r'\bpip\s+install\s+([a-zA-Z_][a-zA-Z0-9_-]*)',
+            r'\bnpm\s+install\s+([a-zA-Z_][a-zA-Z0-9_-]*)',
+        ]
         
-        return results
+        packages = []
+        full_text = command + " " + context
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, full_text.lower())
+            packages.extend(matches)
+        
+        return list(set(packages))
+    
+    async def list_available_agents(self) -> Dict[str, Any]:
+        """List available agents on the network"""
+        try:
+            session = await self._get_session()
+            
+            async with session.get(
+                f"{self.fetch_network_url}/agents"
+            ) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        "success": True,
+                        "agents": result.get("agents", []),
+                        "total": result.get("total", 0)
+                    }
+                else:
+                    return await self._handle_error(response)
+                    
+        except Exception as e:
+            logger.error(f"Error listing agents: {e}")
+            return {"error": str(e), "success": False}
+    
+    async def request_collaboration(self, task: str, skills: List[str], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Request collaboration from network agents"""
+        try:
+            session = await self._get_session()
+            
+            payload = {
+                "task": task,
+                "required_skills": skills,
+                "context": context,
+                "max_agents": 3,
+                "timeout": 300  # 5 minutes
+            }
+            
+            async with session.post(
+                f"{self.fetch_network_url}/collaboration/request",
+                json=payload
+            ) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        "success": True,
+                        "collaboration_id": result.get("collaboration_id"),
+                        "participating_agents": result.get("agents", []),
+                        "estimated_time": result.get("estimated_time")
+                    }
+                else:
+                    return await self._handle_error(response)
+                    
+        except Exception as e:
+            logger.error(f"Error requesting collaboration: {e}")
+            return {"error": str(e), "success": False}
+    
+    async def _handle_error(self, response: aiohttp.ClientResponse) -> Dict[str, Any]:
+        """Handle API errors"""
+        try:
+            error_data = await response.json()
+            return {
+                "error": error_data.get("message", "Unknown error"),
+                "status_code": response.status,
+                "success": False
+            }
+        except:
+            return {
+                "error": f"HTTP {response.status}",
+                "status_code": response.status,
+                "success": False
+            }
+    
+    async def close(self):
+        """Close the session"""
+        if self.session:
+            await self.session.close()
+            self.session = None
 
-def detect_language_from_context(context: str) -> str:
-    """Détecte le langage de programmation depuis le contexte"""
-    if "def " in context or "import " in context:
-        return "python"
-    elif "function" in context or "const" in context or "let" in context:
-        return "javascript"
-    elif "interface" in context or "type" in context:
-        return "typescript"
-    elif "public class" in context:
-        return "java"
-    return "python"  # default
-
-def extract_topic_from_command(command: str) -> str:
-    """Extrait le sujet principal de la commande"""
-    # Mots-clés techniques courants
-    keywords = ["api", "database", "authentication", "validation", "testing", "async", "promise"]
-    for keyword in keywords:
-        if keyword in command.lower():
-            return keyword
-    return "general"
-
-def extract_package_name(command: str) -> str:
-    """Extrait le nom du package de la commande"""
-    # Logique simple pour extraire le nom du package
-    words = command.split()
-    for i, word in enumerate(words):
-        if word.lower() in ["package", "library", "module"] and i + 1 < len(words):
-            return words[i + 1]
-    return ""
-
-def extract_search_query(command: str) -> str:
-    """Extrait la requête de recherche de la commande"""
-    # Supprimer les mots de commande pour garder le sujet
-    stop_words = ["cherche", "trouve", "search", "find", "stackoverflow", "solution"]
-    words = [word for word in command.split() if word.lower() not in stop_words]
-    return " ".join(words)
+# Global function for easy access
+async def fetch_data_for_command(command: str, context: str, sources: List[str] = None) -> Dict[str, Any]:
+    """Global function to fetch data for command enhancement"""
+    fetch_service = FetchService()
+    try:
+        return await fetch_service.fetch_data_for_command(command, context, sources)
+    finally:
+        await fetch_service.close()
