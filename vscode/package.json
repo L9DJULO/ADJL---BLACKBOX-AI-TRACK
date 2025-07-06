@@ -1,6 +1,6 @@
 {
-  "name": "adjl",
-  "displayName": "ADJL",
+  "name": "adj",
+  "displayName": "adj",
   "description": "",
   "version": "0.0.1",
   "engines": {
@@ -14,7 +14,7 @@
   "contributes": {
     "commands": [
       {
-        "command": "adjl.helloWorld",
+        "command": "adj.helloWorld",
         "title": "Hello World"
       }
     ]
