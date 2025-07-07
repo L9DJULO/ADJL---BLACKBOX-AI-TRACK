@@ -9,7 +9,7 @@ export default function App() {
 
     return (
         <div>
-            <h1>Hello from Vite + React</h1>
+            <h1>VODY</h1>
             <h1>{ vscode === undefined ? 'NOOON' : 'YESSS'}</h1>
             <button onClick={sendMessage}>Send Message to VS Code</button>
         </div>
