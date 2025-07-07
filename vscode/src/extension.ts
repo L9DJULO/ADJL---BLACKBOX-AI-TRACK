@@ -25,6 +25,5 @@ export function activate(context: vscode.ExtensionContext) {
         });
     });
 
-    // Ajout du disposable au contexte
     context.subscriptions.push(helloWorldCommand);
 }

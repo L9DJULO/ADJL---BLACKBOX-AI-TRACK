@@ -24,7 +24,7 @@
     "viewsWelcome": [
       {
         "view": "VODY",
-        "contents": "$(robot)VODY!\n[Get started with VODY](command:adj.helloWorld)"
+        "contents": "$(robot) VODY\n[Get started with VODY](command:adj.helloWorld)"
       }
     ],
     "commands": [
