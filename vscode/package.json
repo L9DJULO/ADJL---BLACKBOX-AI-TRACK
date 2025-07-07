@@ -12,6 +12,21 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
+    "views": {
+      "explorer":[
+        {
+          "id": "VODY",
+          "name": "VODY",
+          "icon": "$(robot)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "VODY",
+        "contents": "$(robot)VODY!\n[Get started with VODY](command:adj.helloWorld)"
+      }
+    ],
     "commands": [
       {
         "command": "adj.helloWorld",
