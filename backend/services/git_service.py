@@ -23,6 +23,49 @@ class GitService:
         except Exception:
             return False
     
+    def create_branch_and_commit(self, repo_path: str, branch_name: str, 
+                                file_path: str, new_content: str, 
+                                commit_message: str) -> Dict[str, Any]:
+        """Create a new branch and commit changes"""
+        try:
+            repo = self._get_repo(repo_path)
+            if not repo:
+                return {"success": False, "error": "Repository not found"}
+            
+            # Store current branch
+            original_branch = repo.active_branch.name
+            
+            # Create and checkout new branch
+            new_branch = repo.create_head(branch_name)
+            new_branch.checkout()
+            
+            # Write the new content to file
+            full_file_path = os.path.join(repo_path, file_path)
+            os.makedirs(os.path.dirname(full_file_path), exist_ok=True)
+            
+            with open(full_file_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            # Stage and commit the changes
+            repo.index.add([file_path])
+            commit = repo.index.commit(commit_message)
+            
+            # Return to original branch
+            repo.heads[original_branch].checkout()
+            
+            return {
+                "success": True,
+                "branch_name": branch_name,
+                "commit_hash": commit.hexsha[:8],
+                "commit_message": commit_message,
+                "file_modified": file_path,
+                "original_branch": original_branch
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating branch and committing: {e}")
+            return {"success": False, "error": str(e)}
+    
     def clone_repository(self, repo_url: str, local_path: Optional[str] = None) -> Dict[str, Any]:
         """Clone a repository"""
         try:
