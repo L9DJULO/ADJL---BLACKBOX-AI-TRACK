@@ -94,6 +94,75 @@ class CoralService:
         else:
             logger.error(f"Node registration failed: {response_data}")
     
+    async def analyze_command(self, command: str, context: str, file_path: str) -> Dict[str, Any]:
+        """Analyze command using Coral's collaborative AI agents"""
+        try:
+            # Fallback implementation if websocket not connected
+            if not self.websocket:
+                logger.warning("Coral not connected, using fallback analysis")
+                return {
+                    "success": True,
+                    "analysis": {
+                        "command": command,
+                        "suggested_action": "generate",
+                        "confidence": 0.8,
+                        "agents_used": ["fallback"]
+                    },
+                    "source": "coral_fallback"
+                }
+            
+            # Create analysis request
+            analysis_request = {
+                "type": "analyze_command",
+                "session_id": self.session_id,
+                "command": command,
+                "context": {
+                    "code": context,
+                    "file_path": file_path,
+                    "timestamp": datetime.utcnow().isoformat()
+                },
+                "required_agents": [
+                    "intent_analyzer",
+                    "code_analyzer",
+                    "best_practice_advisor"
+                ]
+            }
+            
+            await self.websocket.send(json.dumps(analysis_request))
+            
+            # Wait for response with timeout
+            response = await asyncio.wait_for(self.websocket.recv(), timeout=10)
+            response_data = json.loads(response)
+            
+            if response_data.get("status") == "success":
+                return {
+                    "success": True,
+                    "analysis": response_data.get("analysis", {}),
+                    "agents_results": response_data.get("agents_results", {}),
+                    "source": "coral_protocol"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": response_data.get("error", "Analysis failed"),
+                    "source": "coral_protocol"
+                }
+                
+        except asyncio.TimeoutError:
+            logger.error("Coral analysis timeout")
+            return {
+                "success": False,
+                "error": "Analysis timeout",
+                "source": "coral_protocol"
+            }
+        except Exception as e:
+            logger.error(f"Error analyzing command with Coral: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "source": "coral_protocol"
+            }
+    
     async def create_agent_collaboration(self, task: str, code: str, language: str) -> Dict[str, Any]:
         """Create a collaboration session with multiple AI agents"""
         try:
