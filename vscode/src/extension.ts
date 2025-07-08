@@ -1,9 +1,13 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
+import { create } from 'domain';
 
 export function activate(context: vscode.ExtensionContext) {
     
-    // Commande Hello World qui ouvre le React 
+
+
+    // Commande : Afficher panneau React (helloWorld)
     const helloWorldCommand = vscode.commands.registerCommand('adj.helloWorld', () => {
         const panel = vscode.window.createWebviewPanel(
             'myWebview',
@@ -24,6 +28,13 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage(JSON.stringify(msg));
         });
     });
+    const fonctionGlobal = vscode.commands.registerCommand('adj.fonctionGLobal', () => {
+        vscode.commands.executeCommand('adj.helloWorld');
+       
+    })
 
-    context.subscriptions.push(helloWorldCommand);
+    // Enregistre les commandes dans les subscriptions
+    context.subscriptions.push(helloWorldCommand, fonctionGlobal);
 }
+
+export function deactivate() {}
