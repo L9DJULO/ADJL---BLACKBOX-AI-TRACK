@@ -16,7 +16,7 @@ if (!SpeechRecognition) {
     output.textContent = "🎙️ Écoute en cours...";
   });
 
-  recognition.onresult = (event: SpeechRecognitionEvent) => {
+  recognition.onresult = (event: any) => {
     const transcript = Array.from(event.results)
       .map(result => result[0].transcript)
       .join('');
