@@ -24,13 +24,17 @@
     "viewsWelcome": [
       {
         "view": "VODY",
-        "contents": "$(robot) VODY\n[Get started with VODY](command:adj.helloWorld)"
+        "contents": "$(robot) VODY\n[Get started with VODY](command:adj.fonctionGLobal)"
       }
     ],
     "commands": [
       {
         "command": "adj.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "adj.createTestFileCommand",
+        "title": "Create a file and a text file"
       }
     ]
   },
