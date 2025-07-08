@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 BrainRot Generator - BlackBox AI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🧠 BrainRot Generator 🤖</h1>
+            <p class="subtitle">Powered by BlackBox AI - Génération de contenu absurde ultime</p>
+        </header>
+        
+        <div class="input-section">
+            <div class="prompt-container">
+                <label for="promptInput">💭 Ton prompt (optionnel):</label>
+                <textarea id="promptInput" placeholder="Décris ton délire ou laisse vide pour du chaos total..." rows="3"></textarea>
+            </div>
+            
+            <div class="style-selector">
+                <label>🎨 Style de BrainRot:</label>
+                <div class="style-buttons">
+                    <button class="style-btn active" data-style="absurd">🌀 Absurde</button>
+                    <button class="style-btn" data-style="brainrot">🧠 BrainRot</button>
+                    <button class="style-btn" data-style="tiktok">📱 TikTok</button>
+                    <button class="style-btn" data-style="reddit">🤓 Reddit</button>
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <button id="generateBtn" class="generate-btn">🚀 GÉNÉRER DU BRAINROT</button>
+                <button id="randomBtn" class="random-btn">🎲 CHAOS TOTAL</button>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading hidden">
+            <div class="loading-spinner"></div>
+            <p>🤖 BlackBox AI génère ton délire...</p>
+        </div>
+        
+        <div id="result" class="result hidden">
+            <h3>🎯 Ton BrainRot généré:</h3>
+            <div class="ai-info">
+                <span id="aiInfo" class="ai-badge"></span>
+            </div>
+            <div class="meme-content">
+                <img id="memeImage" alt="Mème généré" class="meme-image">
+                <div class="audio-container">
+                    <audio id="memeAudio" controls>
+                        Votre navigateur ne supporte pas la lecture audio.
+                    </audio>
+                </div>
+            </div>
+            <div class="meme-text">
+                <p id="generatedText"></p>
+            </div>
+            <div class="actions">
+                <button onclick="downloadImage()">📥 Image</button>
+                <button onclick="downloadAudio()">🔊 Audio</button>
+                <button onclick="shareContent()">📤 Partager</button>
+                <button onclick="generateAnother()">🔄 Encore!</button>
+            </div>
+        </div>
+        
+        <div class="suggestions">
+            <h3>💡 Idées de prompts BrainRot:</h3>
+            <div class="suggestion-grid">
+                <button onclick="setPrompt('Chat influenceur secret')" class="suggestion-card">
+                    🐱 Chat influenceur secret
+                </button>
+                <button onclick="setPrompt('Prof de maths qui rap')" class="suggestion-card">
+                    🎤 Prof de maths qui rap
+                </button>
+                <button onclick="setPrompt('Alien qui découvre TikTok')" class="suggestion-card">
+                    👽 Alien découvre TikTok
+                </button>
+                <button onclick="setPrompt('Boomer vs Gen Z')" class="suggestion-card">
+                    👴 Boomer vs Gen Z
+                </button>
+                <button onclick="setPrompt('IA qui devient influenceur')" class="suggestion-card">
+                    🤖 IA influenceur
+                </button>
+                <button onclick="setPrompt('Légumes qui font du gaming')" class="suggestion-card">
+                    🥕 Légumes gamers
+                </button>
+            </div>
+        </div>
+        
+        <footer class="footer">
+            <p>🔥 Propulsé par BlackBox AI | 🧠 Maximum BrainRot Energy</p>
+        </footer>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>

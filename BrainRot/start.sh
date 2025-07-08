@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "🧠 Générateur de Mèmes Absurdes - Version Simple 🧠"
-echo "===================================================="
+echo "🧠 BrainRot Generator - BlackBox AI Edition 🤖"
+echo "=============================================="
 
 # Vérifier si Python est installé
 if ! command -v python3 &> /dev/null; then
@@ -22,15 +22,19 @@ fi
 echo "🔧 Activation de l'environnement virtuel..."
 source venv/bin/activate
 
-# Installer les dépendances simplifiées (sans moviepy)
-echo "📥 Installation des dépendances simplifiées..."
-pip install -r requirements_simple.txt
+# Installer les dépendances
+echo "📥 Installation des dépendances (avec BlackBox AI)..."
+pip install -r requirements.txt
 
 # Créer le dossier output
 mkdir -p output
 
 echo ""
-echo "🚀 Lancement du serveur backend (version simple)..."
+echo "🤖 Configuration BlackBox AI:"
+echo "   API Key: sk-FjYYA2K82ssQ4JBpE_0QYA"
+echo "   Endpoint: https://api.blackboxai.com/v1/chat/completions"
+echo ""
+echo "🚀 Lancement du serveur backend..."
 echo "📍 Backend: http://localhost:8000"
 echo "📖 API Docs: http://localhost:8000/docs"
 echo ""
@@ -39,11 +43,14 @@ echo "   cd frontend"
 echo "   python3 -m http.server 3000"
 echo "   Puis ouvrez: http://localhost:3000"
 echo ""
-echo "ℹ️  Version simple: génère image + audio séparément"
-echo "   Pour les vidéos, installez moviepy et utilisez main.py"
+echo "✨ Fonctionnalités BrainRot:"
+echo "   🧠 Génération IA avec BlackBox"
+echo "   🎨 4 styles: Absurde, BrainRot, TikTok, Reddit"
+echo "   🔊 Synthèse vocale française"
+echo "   📱 Interface ultra-saturée"
 echo ""
 echo "🛑 Arrêter avec Ctrl+C"
 echo ""
 
-# Lancer le serveur avec la version simple
-uvicorn main_simple:app --reload --host 0.0.0.0 --port 8000
+# Lancer le serveur
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
