@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from services.ai_orchestrator import AIOrchestrator
 from services.git_service import GitService
 from models.request_models import (
-    VoiceCommandRequest, VoiceCommandResponse, 
+    VoiceCommandResponse, 
     ServiceStatus, CommandType
 )
 from typing import Dict, List
@@ -80,27 +80,46 @@ async def process_voice_command(
         # Determine command type from intent analysis
         command_type = CommandType.GENERATE  # Default
         if ai_results.get("intent_analysis", {}).get("success"):
-            action = ai_results["intent_analysis"].get("content", {}).get("action", "generate")
-            command_type_map = {
-                "analyze": CommandType.ANALYZE,
-                "generate": CommandType.GENERATE,
-                "refactor": CommandType.REFACTOR,
-                "test": CommandType.TEST,
-                "document": CommandType.DOCUMENT,
-                "fix": CommandType.FIX,
-                "optimize": CommandType.OPTIMIZE
-            }
-            command_type = command_type_map.get(action, CommandType.GENERATE)
+            intent_content = ai_results["intent_analysis"].get("content", "")
+            # Parse the intent content (it might be a JSON string)
+            try:
+                import json
+                if isinstance(intent_content, str):
+                    intent_data = json.loads(intent_content)
+                else:
+                    intent_data = intent_content
+                    
+                action = intent_data.get("action", "generate")
+                command_type_map = {
+                    "analyze": CommandType.ANALYZE,
+                    "generate": CommandType.GENERATE,
+                    "refactor": CommandType.REFACTOR,
+                    "test": CommandType.TEST,
+                    "document": CommandType.DOCUMENT,
+                    "fix": CommandType.FIX,
+                    "optimize": CommandType.OPTIMIZE
+                }
+                command_type = command_type_map.get(action, CommandType.GENERATE)
+            except:
+                # If parsing fails, keep default
+                pass
         
         # Create Git branch for the changes
         branch_name = f"ai-{command_type.value}-{int(time.time())}"
-        git_result = git_service.create_branch_and_commit(
-            repo_path=project_path,
-            branch_name=branch_name,
-            file_path=file_path,
-            new_content=ai_results.get("code_generation", {}).get("code", ""),
-            commit_message=f"AI: {command[:50]}..."
-        )
+        generated_code = ai_results.get("code_generation", {}).get("code", "")
+        
+        # Only create branch if we have generated code
+        git_result = {}
+        if generated_code:
+            git_result = git_service.create_branch_and_commit(
+                repo_path=project_path,
+                branch_name=branch_name,
+                file_path=file_path,
+                new_content=generated_code,
+                commit_message=f"AI: {command[:50]}..."
+            )
+        else:
+            git_result = {"success": False, "error": "No code generated"}
         
         execution_time = time.time() - start_time
         
@@ -237,12 +256,18 @@ async def startup_event():
     # Pre-load Llama model if available
     if os.getenv('LLAMA_PRELOAD', 'false').lower() == 'true':
         logger.info("Pre-loading Llama model...")
-        await ai_orchestrator.llama.load_model()
+        try:
+            await ai_orchestrator.llama.load_model()
+        except Exception as e:
+            logger.warning(f"Failed to load Llama model: {e}")
     
     # Connect to Coral Protocol
     if ai_orchestrator.coral.is_available():
         logger.info("Connecting to Coral Protocol...")
-        await ai_orchestrator.coral.connect()
+        try:
+            await ai_orchestrator.coral.connect()
+        except Exception as e:
+            logger.warning(f"Failed to connect to Coral: {e}")
     
     logger.info("AI Voice Code Assistant started successfully!")
 
@@ -254,7 +279,10 @@ async def shutdown_event():
     
     # Disconnect from Coral
     if ai_orchestrator.coral.is_available():
-        await ai_orchestrator.coral.disconnect()
+        try:
+            await ai_orchestrator.coral.disconnect()
+        except Exception as e:
+            logger.warning(f"Error disconnecting from Coral: {e}")
     
     # Cleanup Git temporary directories
     git_service.cleanup_temp_dirs()

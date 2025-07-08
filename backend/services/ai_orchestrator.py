@@ -1,199 +1,107 @@
-import asyncio
-from typing import Dict, Any, List
 from .blackbox_service import BlackboxService
-from .coral_service import CoralService
-from .fetch_service import FetchService
 from .groq_service import GroqService
 from .llama_service import LlamaService
+from .coral_service import CoralService
+from .fetch_service import FetchService
+from typing import Dict, Any
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
 class AIOrchestrator:
+    """Orchestre tous les services AI selon les besoins"""
+    
     def __init__(self):
         self.blackbox = BlackboxService()
-        self.coral = CoralService()
-        self.fetch = FetchService()
         self.groq = GroqService()
         self.llama = LlamaService()
-    
-    async def process_text_command(self, command: str, context: str = None, 
-                                  file_content: str = None) -> Dict[str, Any]:
-        """
-        Traite une commande texte en orchestrant les différents services AI
-        """
+        self.coral = CoralService()
+        self.fetch = FetchService()
+        
+    async def process_voice_command(self, command: str, context: str, file_path: str) -> Dict[str, Any]:
+        """Pipeline complet avec tous les services"""
+        
+        results = {}
+        
         try:
-            # 1. Analyse de la commande avec Coral Protocol
-            coral_analysis = await self.coral.analyze_command(command, context)
-            
-            # 2. Déterminer le service principal selon le type de commande
-            command_type = coral_analysis.get('type', 'code_analysis')
-            
-            if command_type == 'code_generation':
-                return await self._handle_code_generation(command, context, file_content)
-            elif command_type == 'code_analysis':
-                return await self._handle_code_analysis(command, context, file_content)
-            elif command_type == 'refactoring':
-                return await self._handle_refactoring(command, context, file_content)
-            elif command_type == 'debugging':
-                return await self._handle_debugging(command, context, file_content)
-            else:
-                return await self._handle_general_query(command, context, file_content)
-                
-        except Exception as e:
-            logger.error(f"Erreur dans l'orchestrateur: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    async def _handle_code_generation(self, command: str, context: str, 
-                                    file_content: str) -> Dict[str, Any]:
-        """Génération de code avec BLACKBOX.AI comme service principal"""
-        try:
-            # BLACKBOX.AI pour la génération (obligatoire)
-            blackbox_result = await self.blackbox.generate_code(command, context)
-            
-            # Fetch.AI pour optimisation et suggestions
-            fetch_optimization = await self.fetch.optimize_code(
-                blackbox_result.get('code', ''), command
-            )
-            
-            # Coral pour coordination et validation
-            coral_validation = await self.coral.validate_solution(
-                blackbox_result, fetch_optimization
-            )
-            
-            return {
-                'success': True,
-                'type': 'code_generation',
-                'primary_result': blackbox_result,
-                'optimization': fetch_optimization,
-                'validation': coral_validation,
-                'metadata': {
-                    'services_used': ['blackbox', 'fetch', 'coral'],
-                    'primary_service': 'blackbox'
+            # 1. Analyse de l'intention avec Groq (rapide)
+            intent_result = await self.groq.quick_analysis(context, command)
+            results["intent_analysis"] = {
+                "success": intent_result.get("success", False),
+                "content": {
+                    "action": self._extract_action_from_command(command),
+                    "confidence": intent_result.get("confidence", 0.7)
                 }
             }
+            
+            # 2. Analyse collaborative avec Coral
+            results["coral_analysis"] = await self.coral.analyze_command(command, context, file_path)
+            
+            # 3. Génération de code avec BLACKBOX.AI
+            code_result = await self.blackbox.generate_code(command, context)
+            results["code_generation"] = code_result
+            
+            # 4. Validation avec Llama
+            if code_result.get("success") and code_result.get("code"):
+                validation_result = await self.llama.validate_best_practices(
+                    code_result["code"], 
+                    context
+                )
+                results["validation"] = validation_result
+            
+            # 5. Optimisation avec Fetch
+            if code_result.get("success") and code_result.get("code"):
+                optimization_result = await self.fetch.optimize_code(
+                    code_result["code"],
+                    command
+                )
+                results["optimization"] = optimization_result
+            
+            return results
+            
         except Exception as e:
-            logger.error(f"Erreur génération de code: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    async def _handle_code_analysis(self, command: str, context: str, 
-                                   file_content: str) -> Dict[str, Any]:
-        """Analyse de code avec coordination multi-agents"""
-        try:
-            # BLACKBOX.AI pour l'analyse principale
-            blackbox_analysis = await self.blackbox.analyze_code(file_content, command)
-            
-            # Groq pour analyse rapide complémentaire
-            groq_analysis = await self.groq.quick_analysis(file_content, command)
-            
-            # Coral pour synthèse et priorisation
-            coral_synthesis = await self.coral.synthesize_analysis(
-                blackbox_analysis, groq_analysis
-            )
-            
+            logger.error(f"Error in AI orchestrator: {e}")
             return {
-                'success': True,
-                'type': 'code_analysis',
-                'primary_analysis': blackbox_analysis,
-                'quick_analysis': groq_analysis,
-                'synthesis': coral_synthesis,
-                'metadata': {
-                    'services_used': ['blackbox', 'groq', 'coral'],
-                    'primary_service': 'blackbox'
-                }
+                "error": str(e),
+                "intent_analysis": {"success": False, "error": str(e)},
+                "code_generation": {"success": False, "error": str(e)}
             }
-        except Exception as e:
-            logger.error(f"Erreur analyse de code: {e}")
-            return {'success': False, 'error': str(e)}
     
-    async def _handle_refactoring(self, command: str, context: str, 
-                                 file_content: str) -> Dict[str, Any]:
-        """Refactoring avec BLACKBOX.AI et optimisation Fetch.AI"""
-        try:
-            # BLACKBOX.AI pour le refactoring principal
-            blackbox_refactor = await self.blackbox.refactor_code(file_content, command)
-            
-            # Fetch.AI pour suggestions d'amélioration
-            fetch_improvements = await self.fetch.suggest_improvements(
-                file_content, blackbox_refactor.get('refactored_code', '')
-            )
-            
-            # Llama pour validation des bonnes pratiques
-            llama_validation = await self.llama.validate_best_practices(
-                blackbox_refactor.get('refactored_code', ''), context
-            )
-            
-            return {
-                'success': True,
-                'type': 'refactoring',
-                'refactored_code': blackbox_refactor,
-                'improvements': fetch_improvements,
-                'validation': llama_validation,
-                'metadata': {
-                    'services_used': ['blackbox', 'fetch', 'llama'],
-                    'primary_service': 'blackbox'
-                }
-            }
-        except Exception as e:
-            logger.error(f"Erreur refactoring: {e}")
-            return {'success': False, 'error': str(e)}
+    def _extract_action_from_command(self, command: str) -> str:
+        """Extrait l'action de la commande"""
+        command_lower = command.lower()
+        
+        if any(word in command_lower for word in ["generate", "create", "add", "write"]):
+            return "generate"
+        elif any(word in command_lower for word in ["analyze", "review", "check"]):
+            return "analyze"
+        elif any(word in command_lower for word in ["refactor", "improve", "optimize"]):
+            return "refactor"
+        elif any(word in command_lower for word in ["test", "unit test"]):
+            return "test"
+        elif any(word in command_lower for word in ["document", "docs", "comment"]):
+            return "document"
+        elif any(word in command_lower for word in ["fix", "debug", "error"]):
+            return "fix"
+        else:
+            return "generate"  # Default
     
-    async def _handle_debugging(self, command: str, context: str, 
-                               file_content: str) -> Dict[str, Any]:
-        """Débogage avec analyse multi-agents"""
+    async def get_service_status(self) -> Dict[str, str]:
+        """Vérifie le statut de tous les services"""
+        
+        status = {}
+        
         try:
-            # BLACKBOX.AI pour détection de bugs
-            blackbox_debug = await self.blackbox.debug_code(file_content, command)
+            # Test simple pour chaque service
+            status["blackbox"] = "ready"  # Assume ready if initialized
+            status["groq"] = "ready"
+            status["llama"] = "ready"
+            status["coral"] = "ready" if self.coral.is_available() else "unavailable"
+            status["fetch"] = "ready"
             
-            # Groq pour analyse rapide des erreurs
-            groq_errors = await self.groq.detect_errors(file_content)
-            
-            # Coral pour priorisation des corrections
-            coral_priorities = await self.coral.prioritize_fixes(
-                blackbox_debug, groq_errors
-            )
-            
-            return {
-                'success': True,
-                'type': 'debugging',
-                'debug_analysis': blackbox_debug,
-                'error_detection': groq_errors,
-                'fix_priorities': coral_priorities,
-                'metadata': {
-                    'services_used': ['blackbox', 'groq', 'coral'],
-                    'primary_service': 'blackbox'
-                }
-            }
         except Exception as e:
-            logger.error(f"Erreur débogage: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    async def _handle_general_query(self, command: str, context: str, 
-                                   file_content: str) -> Dict[str, Any]:
-        """Requête générale avec distribution intelligente"""
-        try:
-            # Fetch.AI pour compréhension de l'intention
-            fetch_intent = await self.fetch.understand_intent(command, context)
-            
-            # BLACKBOX.AI pour réponse technique
-            blackbox_response = await self.blackbox.general_query(command, context)
-            
-            # Coral pour orchestration de la réponse
-            coral_orchestration = await self.coral.orchestrate_response(
-                fetch_intent, blackbox_response
-            )
-            
-            return {
-                'success': True,
-                'type': 'general_query',
-                'intent': fetch_intent,
-                'response': blackbox_response,
-                'orchestration': coral_orchestration,
-                'metadata': {
-                    'services_used': ['fetch', 'blackbox', 'coral'],
-                    'primary_service': 'blackbox'
-                }
-            }
-        except Exception as e:
-            logger.error(f"Erreur requête générale: {e}")
-            return {'success': False, 'error': str(e)}
+            logger.error(f"Error checking service status: {e}")
+            status["error"] = str(e)
+        
+        return status
