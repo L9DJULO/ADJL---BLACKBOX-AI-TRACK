@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pillow
+gtts
+moviepy
+requests
+python-multipart
+fastapi-cors
